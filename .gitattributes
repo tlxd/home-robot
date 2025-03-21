@@ -1,0 +1,2 @@
+src/home_robot/home_robot/perception/detection/detic/Detic/dpt_beit_large_512.pt filter=lfs diff=lfs merge=lfs -text
+src/home_robot/home_robot/perception/detection/detic/Detic/models/Detic_LCOCOI21k_CLIP_SwinB_896b32_4x_ft4x_max-size.pth filter=lfs diff=lfs merge=lfs -text
