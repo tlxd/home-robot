@@ -5,7 +5,8 @@
 import threading
 
 import numpy as np
-import rospy
+import rclpy
+from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 
 
@@ -14,14 +15,18 @@ class RosLidar(object):
 
     _max_dist = 100.0
 
-    def __init__(self, name: str = "/scan", verbose: bool = False):
+    def __init__(self, node: Node, name: str = "/scan", verbose: bool = False):
+        self.node = node
         self.name = name
         self._points = None
         self.verbose = verbose
         self._lock = threading.Lock()
-        self._t = rospy.Time(0)
-        self._subscriber = rospy.Subscriber(
-            self.name, LaserScan, self._lidar_scan_callback, queue_size=10
+        self._t = self.node.get_clock().now()  # 获取时钟时间
+        self._subscriber = self.node.create_subscription(
+            LaserScan,
+            self.name,
+            self._lidar_scan_callback,
+            10
         )
 
     def _lidar_scan_callback(self, scan_msg):
@@ -59,8 +64,8 @@ class RosLidar(object):
     def wait_for_scan(self) -> None:
         """Wait for image. Needs to be sort of slow, in order to make sure we give it time
         to update the image in the backend."""
-        rate = rospy.Rate(5)
-        while not rospy.is_shutdown():
+        rate = self.node.create_rate(10)
+        while rclpy.ok():
             with self._lock:
                 if self._points is not None:
                     break

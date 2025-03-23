@@ -6,7 +6,9 @@ import threading
 from collections import deque
 
 import numpy as np
-import rospy
+import rclpy
+from rclpy.node import Node
+from rclpy.task import Future
 from sensor_msgs.msg import CameraInfo, Image
 
 from home_robot.utils.image import Camera
@@ -18,6 +20,7 @@ class RosCamera(Camera):
 
     def __init__(
         self,
+        node: Node,
         name: str = "/camera/color",
         verbose: bool = False,
         rotations: int = 0,
@@ -30,18 +33,44 @@ class RosCamera(Camera):
             rotations: Number of counterclockwise rotations for the output image array
             buffer_size: Size of buffer for intialization and filtering
         """
+        self.node = node
         self.name = name
         self.rotations = 0
 
         # Initialize
         self._img = None
-        self._t = rospy.Time(0)
+        self._t = self.node.get_clock().now()
         self._lock = threading.Lock()
         self._camera_info_topic = "/camera/aligned_depth_to_color/camera_info"
 
         # if verbose:
         #     print("Waiting for camera info on", self._camera_info_topic + "...")
-        cam_info = rospy.wait_for_message(self._camera_info_topic, CameraInfo)
+
+        # 创建一个 Future 对象用于等待相机信息
+        cam_info_future = Future()
+
+        def cam_info_callback(msg):
+            nonlocal cam_info_future
+            if not cam_info_future.done():
+                cam_info_future.set_result(msg)
+
+        # 创建相机信息的订阅者
+        cam_info_sub = self.node.create_subscription(
+            CameraInfo,
+            self._camera_info_topic,
+            cam_info_callback,
+            10
+        )
+
+        # 阻塞等待相机信息
+        while rclpy.ok() and not cam_info_future.done():
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+
+        # 销毁订阅者
+        cam_info_sub.destroy()
+
+        # 获取相机信息
+        cam_info = cam_info_future.result()
 
         # Buffer
         self.buffer_size = buffer_size
@@ -66,9 +95,14 @@ class RosCamera(Camera):
 
         self.near_val = 0.1
         self.far_val = 7.0
-        self.frame_id = cam_info.header.frame_id
-        self.topic_name = name 
-        self._sub = rospy.Subscriber(self.topic_name, Image, self._cb, queue_size=1)
+        self.frame_id = self.cam_info.header.frame_id
+        self.topic_name = name
+        self._subscriber = self.node.create_subscription(
+            Image,
+            self.topic_name,
+            self._cb,
+            1
+        )
 
     def _cb(self, msg):
         """capture the latest image and save it"""
@@ -116,9 +150,9 @@ class RosCamera(Camera):
     def wait_for_image(self) -> None:
         """Wait for image. Needs to be sort of slow, in order to make sure we give it time
         to update the image in the backend."""
-        rospy.sleep(0.2)
-        rate = rospy.Rate(5)
-        while not rospy.is_shutdown():
+        self.node.get_clock().sleep_for(rclpy.time.Duration(seconds=0.2))
+        rate = self.node.create_rate(5)
+        while rclpy.ok():
             with self._lock:
                 if self.buffer_size is None:
                     if self._img is not None:

@@ -3,7 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-import rospy
+import rclpy
 
 class StretchHeadClient():
 
@@ -25,11 +25,13 @@ class StretchHeadClient():
 
     def _wait_for_pose(self):
         """wait until we have an accurate pose estimate"""
-        rate = rospy.Rate(10)
-        while not rospy.is_shutdown():
+        tmp_node = rclpy.create_node('wait_for_pose_node')  # 创建一个临时节点
+        rate = tmp_node.create_rate(10)  # 使用临时节点创建速率对象
+        while rclpy.ok():
             if self._ros_client.se3_camera_pose is not None:
                 break
             rate.sleep()
+        tmp_node.destroy_node()  # 销毁临时节点
 
     def get_images(self, compute_xyz=True):
         """helper logic to get images from the robot's camera feed"""
@@ -51,3 +53,7 @@ class StretchHeadClient():
 
         return imgs
 
+    def shutdown(self):
+        """Clean up resources"""
+        self._tf_listener = None
+        self._tf_buffer = None
