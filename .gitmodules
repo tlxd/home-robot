@@ -1,0 +1,3 @@
+[submodule "src/home_robot/home_robot/perception/detection/detic/Detic/third_party/Deformable-DETR/Deformable-DETR"]
+	path = src/home_robot/home_robot/perception/detection/detic/Detic/third_party/Deformable-DETR/Deformable-DETR
+	url = https://github.com/fundamentalvision/Deformable-DETR.git
