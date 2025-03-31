@@ -5,7 +5,8 @@
 from typing import Dict, Iterable, List, Optional
 
 import numpy as np
-import rospy
+import rclpy  # 导入 ROS2 的Python客户端库
+from rclpy.node import Node  # 导入 ROS2 的节点类
 import torch
 
 from home_robot.core.interfaces import Observations
@@ -35,7 +36,8 @@ class StretchClient():
         """
         # Ros
         if init_node:
-            rospy.init_node("stretch_user_client")
+            rclpy.init()  # 初始化 ROS2 
+            self.node = Node("stretch_user_client")  # 创建 ROS2 节点
 
         if camera_overrides is None:
             camera_overrides = {}
@@ -46,3 +48,8 @@ class StretchClient():
         self.nav = StretchNavigationClient(self._ros_client)
         self.head = StretchHeadClient(self._ros_client)
 
+    def destroy_node(self):
+        """销毁节点并关闭 ROS2 """
+        if hasattr(self, 'node'):
+            self.node.destroy_node()
+            rclpy.shutdown()

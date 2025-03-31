@@ -8,8 +8,7 @@ import abc
 import threading
 from typing import Callable
 
-import rospy
-
+import rclpy
 
 def enforce_enabled(func):
     """Decorator for checking if a control method is executed while module is enabled."""
@@ -19,7 +18,10 @@ def enforce_enabled(func):
             return func(self, *args, **kwargs)
         else:
             err_str = f"{type(self).__name__}.{func.__name__} is only available in when the corresponding control mode is active."
-            rospy.logerr(err_str)
+            if hasattr(self, 'get_logger'):
+                self.get_logger().error(err_str)
+            else:
+                rclpy.logging.get_logger('default').error(err_str)
             raise TypeError(err_str)
 
     return wrapper

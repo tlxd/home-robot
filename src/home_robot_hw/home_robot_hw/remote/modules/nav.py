@@ -5,7 +5,7 @@
 from typing import Iterable, List
 
 import numpy as np
-import rospy
+import rclpy
 from geometry_msgs.msg import Twist
 from std_srvs.srv import SetBoolRequest, TriggerRequest
 
@@ -29,6 +29,7 @@ class StretchNavigationClient(AbstractControlModule):
         super().__init__()
 
         self._ros_client = ros_client
+        self._clock = self._ros_client.get_clock()
         self._wait_for_pose()
 
     # Interface methods
@@ -44,7 +45,7 @@ class StretchNavigationClient(AbstractControlModule):
         """Returns true if the agent is currently at its goal location"""
         if (
             self._ros_client._goal_reset_t is not None
-            and (rospy.Time.now() - self._ros_client._goal_reset_t).to_sec()
+            and (self._clock.now() - self._ros_client._goal_reset_t).to_sec()
             > self._ros_client.msg_delay_t
         ):
             return self._ros_client.at_goal
@@ -98,23 +99,26 @@ class StretchNavigationClient(AbstractControlModule):
 
     def _wait_for_pose(self):
         """wait until we have an accurate pose estimate"""
-        rate = rospy.Rate(10)
-        while not rospy.is_shutdown():
+        tmp_node = rclpy.create_node('wait_for_pose_node')  # 创建一个临时节点
+        rate = tmp_node.create_rate(10)  # 使用临时节点创建速率对象
+        while rclpy.ok():
             if self._ros_client.se3_base_filtered is not None:
                 break
             rate.sleep()
+        tmp_node.destroy_node()  # 销毁临时节点
 
     def _wait_for_goal_reached(self, verbose: bool = False):
         """Wait until goal is reached"""
-        rospy.sleep(self._ros_client.msg_delay_t)
-        rate = rospy.Rate(self.block_spin_rate)
-        t0 = rospy.Time.now()
-        while not rospy.is_shutdown():
-            t1 = rospy.Time.now()
+        self._clock.sleep_for(rclpy.time.Duration(seconds=self._ros_client.msg_delay_t))
+        tmp_node = rclpy.create_node('wait_for_goal_reached_node')  # 创建一个临时节点
+        rate = tmp_node.create_rate(self.block_spin_rate)  # 使用临时节点创建速率对象
+        t0 = self._clock.now()
+        while rclpy.ok():
+            t1 = self._clock.now()
             if verbose:
                 print(
                     "...waited for controller",
-                    (t1 - t0).to_sec(),
+                    (t1 - t0).nanoseconds/1e9,
                     "is at goal =",
                     self.at_goal(),
                 )
@@ -125,3 +129,4 @@ class StretchNavigationClient(AbstractControlModule):
                 break
             else:
                 rate.sleep()
+        tmp_node.destroy_node()  # 销毁临时节点

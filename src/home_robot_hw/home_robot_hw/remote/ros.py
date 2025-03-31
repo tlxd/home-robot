@@ -7,7 +7,10 @@ from typing import  Optional
 
 
 import ros_numpy
-import rospy
+import rclpy
+from rclpy.node import Node
+from rclpy.time import Time, Duration
+from rclpy.client import Client
 import sophuspy as sp
 import tf2_ros
 from geometry_msgs.msg import  Pose, PoseStamped, Twist
@@ -37,6 +40,7 @@ class StretchRosInterface:
 
     def __init__(
         self,
+        node: Node,
         init_cameras: bool = True,
         color_topic: Optional[str] = None,
         depth_topic: Optional[str] = None,
@@ -45,6 +49,7 @@ class StretchRosInterface:
         lidar_topic: Optional[str] = None,
         verbose: bool = False,
     ):
+        self.node = node
         # Verbosity for the ROS client
         self.verbose = verbose
 
@@ -53,9 +58,9 @@ class StretchRosInterface:
         self.se3_camera_pose: Optional[sp.SE3] = None
         self.at_goal: bool = False
 
-        self.last_odom_update_timestamp = rospy.Time(0)
-        self.last_base_update_timestamp = rospy.Time(0)
-        self._goal_reset_t = rospy.Time(0)
+        self.last_odom_update_timestamp = Time(seconds=0, nanoseconds=0)
+        self.last_base_update_timestamp = Time(seconds=0, nanoseconds=0)
+        self._goal_reset_t = Time(seconds=0, nanoseconds=0)
 
         # Create visualizers for pose information
         self.goal_visualizer = Visualizer("command_pose", rgba=[1.0, 0.0, 0.0, 0.5])
@@ -89,7 +94,7 @@ class StretchRosInterface:
         if print_delay_timers:
             print(
                 " - 1",
-                (rospy.Time.now() - self._goal_reset_t).to_sec(),
+                (self.node.get_clock().now() - self._goal_reset_t).to_sec(),
                 self.msg_delay_t,
             )
             print(
@@ -97,7 +102,7 @@ class StretchRosInterface:
             )
         if (
             self._goal_reset_t is not None
-            and (rospy.Time.now() - self._goal_reset_t).to_sec() > self.msg_delay_t
+            and (self.node.get_clock().now() - self._goal_reset_t).to_sec() > self.msg_delay_t
         ):
             return (self.dpt_cam.get_time() - self._goal_reset_t).to_sec() > seconds
         else:
@@ -109,11 +114,16 @@ class StretchRosInterface:
 
     def _create_services(self):
         """Create services to activate/deactive robot modes"""
-        self.goto_on_service = rospy.ServiceProxy("goto_controller/enable", Trigger)
-        self.set_yaw_service = rospy.ServiceProxy(
-            "goto_controller/set_yaw_tracking", SetBool
-        )
+         # 创建服务客户端
+        self.goto_on_service: Client = self.node.create_client(Trigger, "goto_controller/enable")
+        self.set_yaw_service: Client = self.node.create_client(SetBool, "goto_controller/set_yaw_tracking")
+
+        # 等待服务可用
         print("Wait for mode service...")
+        if not self.goto_on_service.wait_for_service(timeout_sec=5.0):
+            self.node.get_logger().error('Service goto_controller/enable is not available.')
+        if not self.set_yaw_service.wait_for_service(timeout_sec=5.0):
+            self.node.get_logger().error('Service goto_controller/set_yaw_tracking is not available.')
 
     def _create_pubs_subs(self):
         """create ROS publishers and subscribers - only call once"""
@@ -122,27 +132,27 @@ class StretchRosInterface:
         self.tf2_listener = tf2_ros.TransformListener(self.tf2_buffer)
 
         # Create command publishers
-        self.goal_pub = rospy.Publisher("goto_controller/goal", Pose, queue_size=1)
-        self.velocity_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
+        self.goal_pub = self.node.create_publisher(Pose, "goto_controller/goal", 1)
+        self.velocity_pub = self.node.create_publisher(Twist, "/cmd_vel", 1)
 
         # Create subscribers
-        self._odom_sub = rospy.Subscriber(
-            "odom",
+        self._odom_sub = self.node.create_subscriber(
             Odometry,
+            "odom",
             self._odom_callback,
-            queue_size=1,
+            1,
         )
-        self._base_state_sub = rospy.Subscriber(
-            "state_estimator/pose_filtered",
+        self._base_state_sub = self.node.create_subscriber(
             PoseStamped,
+            "state_estimator/pose_filtered",
             self._base_state_callback,
-            queue_size=1,
+            1,
         )
-        self._camera_pose_sub = rospy.Subscriber(
-            "camera_pose", PoseStamped, self._camera_pose_callback, queue_size=1
+        self._camera_pose_sub = self.node.create_subscriber(
+            PoseStamped, "camera_pose", self._camera_pose_callback, 1
         )
-        self._at_goal_sub = rospy.Subscriber(
-            "goto_controller/at_goal", Bool, self._at_goal_callback, queue_size=10
+        self._at_goal_sub = self.node.create_subscriber(
+            Bool, "goto_controller/at_goal", self._at_goal_callback, 10
         )
 
 
@@ -186,7 +196,7 @@ class StretchRosInterface:
         if not self.at_goal:
             self._goal_reset_t = None
         elif self._goal_reset_t is None:
-            self._goal_reset_t = rospy.Time.now()
+            self._goal_reset_t = self.node.get_clock().now()
 
 
     def _odom_callback(self, msg: Odometry):
@@ -212,11 +222,11 @@ class StretchRosInterface:
     def get_frame_pose(self, frame, base_frame=None, lookup_time=None, timeout_s=None):
         """look up a particular frame in base coords (or some other coordinate frame)."""
         if lookup_time is None:
-            lookup_time = rospy.Time(0)  # return most recent transform
+            lookup_time = Time(seconds=0, nanoseconds=0)  # return most recent transform
         if timeout_s is None:
-            timeout_ros = rospy.Duration(0.1)
+            timeout_ros = Duration(seconds=0.1)
         else:
-            timeout_ros = rospy.Duration(timeout_s)
+            timeout_ros = Duration(seconds=timeout_s)
         if base_frame is None:
             base_frame = self.base_link
         try:
