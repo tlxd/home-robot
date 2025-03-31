@@ -165,3 +165,7 @@ cython_debug/
 /data
 /syn_data
 /work_dirs
+
+# api_key
+projects/stretch_objectnav/request_module.py
+
